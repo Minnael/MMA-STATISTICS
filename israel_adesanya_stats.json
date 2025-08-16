@@ -1,0 +1,15 @@
+{
+  "name": "Israel Adesanya",
+  "url": "https://www.ufc.com.br/athlete/israel-adesanya",
+  "image_url": "https://ufc.com/images/styles/athlete_bio_full_body/s3/2025-01/ADESANYA_ISRAEL_L_02-01.png?itok=QylnV-fZ",
+  "slpm": 4.02,
+  "sapm": 3.2,
+  "strike_acc": 0.48,
+  "strike_def": 0.56,
+  "td_avg15": 0.05,
+  "td_acc": 0.11,
+  "td_def": 0.77,
+  "sub_avg15": 0.14,
+  "kd_avg": 0.62,
+  "aft_minutes": 17.583333333333332
+}
