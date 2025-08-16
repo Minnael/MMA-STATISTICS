@@ -2,7 +2,10 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
 import os
+import requests
+from io import BytesIO
 from mma_prob_model import FighterStats, win_probability, bootstrap_probability, explain
+from ufc_fighter_scraper import UFCFighterScraper
 
 class MMAAnalyzerGUI:
     def __init__(self, root):
@@ -15,6 +18,9 @@ class MMAAnalyzerGUI:
         self.fighter1_image = None
         self.fighter2_image = None
         
+        # Inicializar scraper
+        self.scraper = UFCFighterScraper()
+        
         self.setup_ui()
     
     def setup_ui(self):
@@ -23,7 +29,7 @@ class MMAAnalyzerGUI:
         main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(40, 20))  # 20px a mais no topo
         
         # Título
-        title_label = tk.Label(main_frame, text="MMA FIGHT ANALYZER", 
+        title_label = tk.Label(main_frame, text="MMA-STATISTICS", 
                               font=("Arial", 24, "bold"), 
                               fg='#ecf0f1', bg='#2c3e50')
         title_label.pack(pady=(0, 30))
@@ -78,6 +84,26 @@ class MMAAnalyzerGUI:
                               font=("Arial", 16, "bold"),
                               fg='#ecf0f1', bg='#34495e')
         title_label.pack(pady=(10, 5))
+        
+        # Frame para URL do lutador
+        url_frame = tk.Frame(inputs_frame, bg='#34495e')
+        url_frame.pack(fill=tk.X, padx=20, pady=5)
+        
+        tk.Label(url_frame, text="Fighter URL:", font=("Arial", 10, "bold"),
+                fg='#ecf0f1', bg='#34495e').pack(anchor=tk.W)
+        
+        # Container para URL e botão
+        url_container = tk.Frame(url_frame, bg='#34495e')
+        url_container.pack(fill=tk.X, pady=2)
+        
+        url_entry = tk.Entry(url_container, font=("Arial", 10))
+        url_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        
+        search_btn = tk.Button(url_container, text="SEARCH", 
+                             font=("Arial", 9, "bold"),
+                             bg='#3498db', fg='white',
+                             command=lambda: self.search_fighter(fighter_num, url_entry.get()))
+        search_btn.pack(side=tk.RIGHT)
         
         # Frame para nome
         name_frame = tk.Frame(inputs_frame, bg='#34495e')
@@ -164,9 +190,11 @@ class MMAAnalyzerGUI:
         if fighter_num == 1:
             self.fighter1_entries = entries
             self.fighter1_name = name_entry
+            self.fighter1_url = url_entry
         else:
             self.fighter2_entries = entries
             self.fighter2_name = name_entry
+            self.fighter2_url = url_entry
     
     def setup_center_photos_vs(self, parent):
         # Frame principal para centralização completa
@@ -298,6 +326,197 @@ class MMAAnalyzerGUI:
         
         widget.bind("<Enter>", on_enter)
         widget.bind("<Leave>", on_leave)
+    
+    def search_fighter(self, fighter_num, url):
+        """Buscar dados do lutador pela URL usando o scraper"""
+        if not url.strip():
+            messagebox.showwarning("Warning", "Please enter a fighter URL")
+            return
+        
+        try:
+            # Mostrar indicador de carregamento
+            if fighter_num == 1:
+                self.fighter1_name.delete(0, tk.END)
+                self.fighter1_name.insert(0, "Loading...")
+            else:
+                self.fighter2_name.delete(0, tk.END)
+                self.fighter2_name.insert(0, "Loading...")
+            
+            # Atualizar interface
+            self.root.update()
+            
+            # Buscar dados do lutador
+            fighter_data = self.scraper.get_fighter_data(url)
+            
+            if not fighter_data or 'name' not in fighter_data:
+                messagebox.showerror("Error", "Could not extract fighter data from the URL")
+                return
+            
+            # Preencher nome
+            if fighter_num == 1:
+                entries = self.fighter1_entries
+                name_entry = self.fighter1_name
+                image_label = self.fighter1_image_label
+            else:
+                entries = self.fighter2_entries
+                name_entry = self.fighter2_name
+                image_label = self.fighter2_image_label
+            
+            # Limpar e preencher nome
+            name_entry.delete(0, tk.END)
+            name_entry.insert(0, fighter_data.get('name', 'Unknown Fighter'))
+            
+            # Preencher estatísticas
+            stat_mapping = {
+                'slpm': 'slpm',
+                'sapm': 'sapm', 
+                'strike_acc': 'strike_acc',
+                'strike_def': 'strike_def',
+                'td_avg15': 'td_avg15',
+                'td_acc': 'td_acc',
+                'td_def': 'td_def',
+                'sub_avg15': 'sub_avg15',
+                'kd_avg': 'kd_avg',
+                'aft_minutes': 'aft_minutes'
+            }
+            
+            for field_name, entry in entries.items():
+                if field_name in stat_mapping:
+                    value = fighter_data.get(stat_mapping[field_name])
+                    entry.delete(0, tk.END)
+                    if value is not None:
+                        # Converter frações para percentuais se necessário
+                        if field_name in ['strike_acc', 'strike_def', 'td_acc', 'td_def']:
+                            if isinstance(value, (int, float)) and value <= 1.0:
+                                value = value * 100
+                        entry.insert(0, f"{value:.2f}" if isinstance(value, float) else str(value))
+            
+            # Carregar imagem se disponível
+            if fighter_data.get('image_url'):
+                self.load_fighter_image_from_url(fighter_num, fighter_data['image_url'], image_label)
+            else:
+                print("Nenhuma URL de imagem encontrada para este lutador")
+            
+            messagebox.showinfo("Success", f"Fighter data loaded successfully for {fighter_data.get('name')}")
+            
+        except Exception as e:
+            # Limpar campo de nome em caso de erro
+            if fighter_num == 1:
+                self.fighter1_name.delete(0, tk.END)
+            else:
+                self.fighter2_name.delete(0, tk.END)
+            
+            messagebox.showerror("Error", f"Failed to load fighter data: {str(e)}")
+    
+    def load_fighter_image_from_url(self, fighter_num, image_url, label):
+        """Carregar imagem do lutador a partir de uma URL"""
+        try:
+            # Headers para evitar bloqueios 403
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            }
+            
+            # Tentar diferentes variações da URL se necessário
+            urls_to_try = [image_url]
+            
+            # Se a URL contém parâmetros, tentar sem eles
+            if '?' in image_url:
+                base_url = image_url.split('?')[0]
+                urls_to_try.append(base_url)
+            
+            # Se é uma URL da UFC, tentar versões alternativas
+            if 'ufc.com' in image_url:
+                # Tentar versão sem itok
+                if 'itok=' in image_url:
+                    clean_url = image_url.split('?itok=')[0]
+                    urls_to_try.append(clean_url)
+                
+                # Tentar versão com .com.br
+                if '.com/' in image_url:
+                    br_url = image_url.replace('.com/', '.com.br/')
+                    urls_to_try.append(br_url)
+            
+            image = None
+            successful_url = None
+            
+            # Tentar cada URL até encontrar uma que funcione
+            for url in urls_to_try:
+                try:
+                    print(f"Tentando carregar imagem de: {url}")
+                    response = requests.get(url, headers=headers, timeout=15, stream=True)
+                    
+                    if response.status_code == 200:
+                        image = Image.open(BytesIO(response.content))
+                        successful_url = url
+                        print(f"Imagem carregada com sucesso de: {url}")
+                        break
+                    else:
+                        print(f"Erro {response.status_code} para URL: {url}")
+                        
+                except requests.exceptions.RequestException as e:
+                    print(f"Erro de request para {url}: {str(e)}")
+                    continue
+                except Exception as e:
+                    print(f"Erro ao processar {url}: {str(e)}")
+                    continue
+            
+            if image is None:
+                print("Nenhuma URL de imagem funcionou")
+                return
+            
+            # Redimensionar para o container
+            container_width = 144
+            container_height = 244
+            
+            img_width, img_height = image.size
+            scale_w = container_width / img_width
+            scale_h = container_height / img_height
+            scale = min(scale_w, scale_h)
+            
+            new_width = int(img_width * scale)
+            new_height = int(img_height * scale)
+            
+            image_resized = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            # Criar imagem final com fundo escuro
+            final_image = Image.new('RGB', (container_width, container_height), '#34495e')
+            paste_x = (container_width - new_width) // 2
+            paste_y = (container_height - new_height) // 2
+            
+            # Tratar transparência se necessário
+            if image_resized.mode in ('RGBA', 'LA') or (image_resized.mode == 'P' and 'transparency' in image_resized.info):
+                if image_resized.mode != 'RGBA':
+                    image_resized = image_resized.convert('RGBA')
+                
+                temp_bg = Image.new('RGBA', (new_width, new_height), '#34495e')
+                composed = Image.alpha_composite(temp_bg, image_resized)
+                image_resized = composed.convert('RGB')
+            
+            final_image.paste(image_resized, (paste_x, paste_y))
+            
+            photo = ImageTk.PhotoImage(final_image)
+            
+            # Atualizar label
+            label.configure(image=photo, text="")
+            label.image = photo
+            
+            # Armazenar imagem
+            if fighter_num == 1:
+                self.fighter1_image = photo
+            else:
+                self.fighter2_image = photo
+            
+            print(f"Imagem do Fighter {fighter_num} carregada com sucesso!")
+                
+        except Exception as e:
+            print(f"Erro geral ao carregar imagem: {str(e)}")
+            # Manter o texto padrão se não conseguir carregar a imagem
     
     def add_fighter_image(self, fighter_num, label):
         from tkinter import filedialog

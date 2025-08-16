@@ -46,21 +46,42 @@ class UFCFighterScraper:
             '.athlete-image img',
             '.hero-image img',
             'img[alt*="headshot"]',
-            'img[src*="headshot"]'
+            'img[src*="headshot"]',
+            '.athlete-headshot img',
+            '.fighter-image img',
+            'img[src*="athlete"]',
+            'img[src*="fighter"]'
         ]
         
+        found_urls = []
+        
         for selector in image_selectors:
-            img_element = soup.select_one(selector)
-            if img_element:
+            img_elements = soup.select(selector)
+            for img_element in img_elements:
                 src = img_element.get('src')
                 if src:
                     # Se a URL for relativa, converte para absoluta
                     if src.startswith('//'):
-                        return 'https:' + src
+                        url = 'https:' + src
                     elif src.startswith('/'):
-                        return 'https://www.ufc.com.br' + src
+                        url = 'https://www.ufc.com.br' + src
                     elif src.startswith('http'):
-                        return src
+                        url = src
+                    else:
+                        continue
+                    
+                    # Filtrar URLs que provavelmente são imagens do lutador
+                    if any(keyword in url.lower() for keyword in ['headshot', 'athlete', 'fighter', 'profile']):
+                        found_urls.append(url)
+        
+        # Retornar a primeira URL encontrada, preferindo URLs mais específicas
+        if found_urls:
+            # Priorizar URLs com 'headshot' ou 'athlete'
+            for url in found_urls:
+                if 'headshot' in url.lower() or 'athlete' in url.lower():
+                    return url
+            return found_urls[0]
+        
         return None
 
     def _extract_specific_stats(self, soup: BeautifulSoup) -> Dict:
