@@ -121,7 +121,7 @@ class MMAAnalyzerGUI:
         
         # Frame principal para estatísticas
         stats_main_frame = tk.Frame(inputs_frame, bg='#34495e')
-        stats_main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        stats_main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=0)
         
         # Criar campos de entrada para estatísticas organizados em seções
         stats_fields = [
@@ -140,6 +140,7 @@ class MMAAnalyzerGUI:
             ("POWER & ENDURANCE", [
                 ("KD Avg/15min", "kd_avg", "Knockdowns per 15 minutes"),
                 ("Fight Time (min)", "aft_minutes", "Average fight time in minutes"),
+                ("Top 10 Fights", "top10_fights", "Number of fights against UFC Top 10 opponents"),
             ])
         ]
         
